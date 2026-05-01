@@ -128,7 +128,7 @@ const ProductSchema = new mongoose.Schema({
    PRODUCT VALIDATION MIDDLEWARE (IMPROVED - THROWS ERRORS)
    Handles service vs physical product rules
 -------------------------- */
-ProductSchema.pre('validate', function(next) {
+ProductSchema.pre('validate', function() {
   const isService = this.productType === 'service';
 
   // ===== SERVICES =====
@@ -137,13 +137,13 @@ ProductSchema.pre('validate', function(next) {
     if (this.weight !== undefined && this.weight !== null) {
       const error = new Error('Service products cannot have weight');
       error.code = 'SERVICE_CANNOT_HAVE_WEIGHT';
-      return next(error);
+      throw error;
     }
     
     if (this.volume !== undefined && this.volume !== null) {
       const error = new Error('Service products cannot have volume');
       error.code = 'SERVICE_CANNOT_HAVE_VOLUME';
-      return next(error);
+      throw error;
     }
     
     // ALWAYS enforce trackInventory = false for services (no guessing)
@@ -158,17 +158,7 @@ ProductSchema.pre('validate', function(next) {
   if (!isService) {
     // ALWAYS enforce trackInventory = true for physical goods
     this.trackInventory = true;
-    
-    // Optional: Add business rule - physical goods should have weight
-    // Uncomment if you want to enforce weight for physical products
-    // if (!this.weight && this.weight !== 0) {
-    //   const error = new Error('Physical products should have weight');
-    //   error.code = 'PHYSICAL_PRODUCT_NEEDS_WEIGHT';
-    //   return next(error);
-    // }
   }
-
-  next();
 });
 
 /* -------------------------
