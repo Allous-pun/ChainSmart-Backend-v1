@@ -11,8 +11,8 @@ const RoleSchema = new mongoose.Schema({
   permissions: [{
     type: String,
     enum: [
-      // Organization
-      'create_branch', 'edit_branch', 'delete_branch',
+      // Branches
+      'view_branches', 'create_branch', 'edit_branch', 'delete_branch',
       // Users
       'create_user', 'edit_user', 'delete_user', 'view_users',
       // Inventory

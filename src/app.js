@@ -10,6 +10,7 @@ const userPublicRoutes = require('./modules/users/publicRoutes');
 const settingsRoutes = require('./modules/settings/routes');
 const organizationSettingsRoutes = require('./modules/organizationSettings/routes');
 const rolesRoutes = require('./modules/roles/routes');
+const branchesRoutes = require('./modules/branches/routes');
 
 // Import middleware
 const { authenticate, requireOrgCode } = require('./middleware/auth');
@@ -29,6 +30,7 @@ app.use('/api/users', authenticate, userRoutes);  // Protected user routes (empl
 app.use('/api/roles', authenticate, rolesRoutes);
 app.use('/api/settings', authenticate, requireOrgCode, settingsRoutes);
 app.use('/api/organization-settings', authenticate, requireOrgCode, organizationSettingsRoutes);
+app.use('/api/branches', authenticate, branchesRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -1,5 +1,6 @@
 const rolePermissions = {
   owner: [
+    'view_branches',
     'create_branch', 'edit_branch', 'delete_branch',
     'create_user', 'edit_user', 'delete_user', 'view_users',
     'create_inventory', 'edit_inventory', 'delete_inventory', 'view_inventory',
@@ -12,6 +13,7 @@ const rolePermissions = {
     'edit_settings', 'view_audit_logs'
   ],
   manager: [
+    'view_branches',
     'create_branch', 'edit_branch',
     'create_user', 'edit_user', 'view_users',
     'create_inventory', 'edit_inventory', 'view_inventory',
@@ -23,6 +25,7 @@ const rolePermissions = {
     'view_emissions'
   ],
   procurement: [
+    'view_branches',
     'view_inventory',
     'create_purchase_plan', 'create_purchase_order', 'view_procurement',
     'view_suppliers',
@@ -30,6 +33,7 @@ const rolePermissions = {
     'view_reports'
   ],
   analyst: [
+    'view_branches',
     'view_inventory',
     'view_procurement',
     'view_suppliers',
@@ -39,6 +43,7 @@ const rolePermissions = {
     'view_emissions'
   ],
   staff: [
+    'view_branches',
     'view_inventory',
     'view_procurement'
   ]
