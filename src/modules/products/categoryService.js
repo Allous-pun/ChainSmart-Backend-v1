@@ -32,7 +32,7 @@ const updateCategory = async (categoryId, orgCode, updateData) => {
   const category = await Category.findOneAndUpdate(
     { _id: categoryId, orgCode },
     { ...updateData },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!category) {
@@ -58,7 +58,7 @@ const deleteCategory = async (categoryId, orgCode) => {
   const category = await Category.findOneAndUpdate(
     { _id: categoryId, orgCode },
     { isActive: false },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!category) {
