@@ -12,6 +12,7 @@ const organizationSettingsRoutes = require('./modules/organizationSettings/route
 const rolesRoutes = require('./modules/roles/routes');
 const branchesRoutes = require('./modules/branches/routes');
 const productsRoutes = require('./modules/products/routes');
+const supplierRoutes = require('./modules/supplier/routes');
 
 // Import middleware
 const { authenticate, requireOrgCode } = require('./middleware/auth');
@@ -33,6 +34,7 @@ app.use('/api/settings', authenticate, requireOrgCode, settingsRoutes);
 app.use('/api/organization-settings', authenticate, requireOrgCode, organizationSettingsRoutes);
 app.use('/api/branches', authenticate, branchesRoutes);
 app.use('/api/products', authenticate, productsRoutes);
+app.use('/api/suppliers', authenticate, supplierRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

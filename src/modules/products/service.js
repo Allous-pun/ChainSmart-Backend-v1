@@ -1,4 +1,4 @@
-const { Product } = require('./model');  // ← FIXED: Destructure Product from the export
+const { Product } = require('./model');
 const { generateUniqueSku } = require('../../utils/skuGenerator');
 
 const createProduct = async (data, createdBy) => {
@@ -137,15 +137,15 @@ const updateProduct = async (productId, orgCode, updateData, updatedBy) => {
     {
       _id: productId,
       orgCode,
-      version: product.version  // 🔒 Critical: version lock
+      version: product.version
     },
     {
       ...updateData,
       updatedBy,
-      $inc: { version: 1 }  // Increment version on successful update
+      $inc: { version: 1 }
     },
     { 
-      new: true,
+      returnDocument: 'after',
       runValidators: true
     }
   );
@@ -214,7 +214,7 @@ const addVariant = async (productId, orgCode, variantData, updatedBy) => {
       $set: { updatedBy },
       $inc: { version: 1 }
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!updated) {
@@ -257,7 +257,7 @@ const updateVariant = async (productId, orgCode, variantSku, updateData, updated
       },
       $inc: { version: 1 }
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!updated) {
@@ -288,7 +288,7 @@ const removeVariant = async (productId, orgCode, variantSku, updatedBy) => {
       $set: { updatedBy },
       $inc: { version: 1 }
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!updated) {
@@ -327,7 +327,7 @@ const addAttribute = async (productId, orgCode, attribute, updatedBy) => {
       $set: { updatedBy },
       $inc: { version: 1 }
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!updated) {
@@ -368,7 +368,7 @@ const updateAttribute = async (productId, orgCode, attributeKey, updateData, upd
       },
       $inc: { version: 1 }
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!updated) {
@@ -399,7 +399,7 @@ const removeAttribute = async (productId, orgCode, attributeKey, updatedBy) => {
       $set: { updatedBy },
       $inc: { version: 1 }
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!updated) {
