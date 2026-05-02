@@ -4,7 +4,10 @@ const createBranch = async (req, res) => {
   try {
     const orgCode = req.user.orgCode;
     const createdBy = req.user.id;
-    const { branchName, address, city, region, country, phone, email } = req.body;
+    const { 
+      branchName, address, city, region, country, phone, email,
+      isWarehouse  // ← ADD THIS
+    } = req.body;
     
     if (!branchName || !address || !city) {
       return res.status(400).json({
@@ -21,7 +24,8 @@ const createBranch = async (req, res) => {
       region,
       country,
       phone,
-      email
+      email,
+      isWarehouse: isWarehouse || false  // ← ADD THIS
     }, createdBy);
     
     res.status(201).json({
@@ -76,7 +80,7 @@ const updateBranch = async (req, res) => {
   try {
     const { branchId } = req.params;
     const orgCode = req.user.orgCode;
-    const { branchName, address, city, region, country, phone, email, isActive } = req.body;
+    const { branchName, address, city, region, country, phone, email, isActive, isWarehouse } = req.body;
     
     const branch = await branchService.updateBranch(branchId, orgCode, {
       branchName,
@@ -86,7 +90,8 @@ const updateBranch = async (req, res) => {
       country,
       phone,
       email,
-      isActive
+      isActive,
+      isWarehouse
     });
     
     res.json({

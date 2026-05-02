@@ -19,7 +19,17 @@ const generateBranchCode = (branchName, counter) => {
 };
 
 const createBranch = async (data, createdBy) => {
-  const { orgCode, branchName, address, city, region, country, phone, email } = data;
+  const { 
+    orgCode, 
+    branchName, 
+    address, 
+    city, 
+    region, 
+    country, 
+    phone, 
+    email,
+    isWarehouse  // ← ADD THIS
+  } = data;
   
   // Check if branch with same name exists
   const existingBranch = await Branch.findOne({ orgCode, branchName });
@@ -63,6 +73,7 @@ const createBranch = async (data, createdBy) => {
     country: country || 'Kenya',
     coordinates,
     formattedAddress,
+    isWarehouse: isWarehouse || false,  // ← ADD THIS
     isDefault: isFirstBranch,
     isActive: true,
     phone,
@@ -97,6 +108,24 @@ const getBranchesByOrg = async (orgCode, includeInactive = false) => {
   return await Branch.find(filter).sort({ isDefault: -1, createdAt: 1 });
 };
 
+// Get only warehouses
+const getWarehousesByOrg = async (orgCode, includeInactive = false) => {
+  const filter = { orgCode, isWarehouse: true };
+  if (!includeInactive) {
+    filter.isActive = true;
+  }
+  return await Branch.find(filter).sort({ createdAt: 1 });
+};
+
+// Get only regular branches (non-warehouse)
+const getRegularBranchesByOrg = async (orgCode, includeInactive = false) => {
+  const filter = { orgCode, isWarehouse: false };
+  if (!includeInactive) {
+    filter.isActive = true;
+  }
+  return await Branch.find(filter).sort({ isDefault: -1, createdAt: 1 });
+};
+
 const getDefaultBranch = async (orgCode) => {
   const branch = await Branch.findOne({ orgCode, isDefault: true, isActive: true });
   if (!branch) {
@@ -106,13 +135,14 @@ const getDefaultBranch = async (orgCode) => {
 };
 
 const updateBranch = async (branchId, orgCode, updateData) => {
-  const { branchName, address, city, region, country, phone, email, isActive } = updateData;
+  const { branchName, address, city, region, country, phone, email, isActive, isWarehouse } = updateData;
   
   const updateFields = {};
   if (branchName) updateFields.branchName = branchName;
   if (phone) updateFields.phone = phone;
   if (email) updateFields.email = email;
   if (isActive !== undefined) updateFields.isActive = isActive;
+  if (isWarehouse !== undefined) updateFields.isWarehouse = isWarehouse;
   
   // If address changed, re-geocode
   if (address || city || region || country) {
@@ -139,7 +169,7 @@ const updateBranch = async (branchId, orgCode, updateData) => {
   const branch = await Branch.findOneAndUpdate(
     { branchId, orgCode },
     updateFields,
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!branch) {
@@ -179,7 +209,7 @@ const setDefaultBranch = async (branchId, orgCode) => {
   const branch = await Branch.findOneAndUpdate(
     { branchId, orgCode },
     { isDefault: true },
-    { new: true }
+    { returnDocument: 'after' }
   );
   
   if (!branch) {
@@ -197,6 +227,8 @@ module.exports = {
   createBranch,
   getBranchById,
   getBranchesByOrg,
+  getWarehousesByOrg,        // ← ADD THIS
+  getRegularBranchesByOrg,   // ← ADD THIS
   getDefaultBranch,
   updateBranch,
   deleteBranch,

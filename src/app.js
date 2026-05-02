@@ -13,6 +13,8 @@ const rolesRoutes = require('./modules/roles/routes');
 const branchesRoutes = require('./modules/branches/routes');
 const productsRoutes = require('./modules/products/routes');
 const supplierRoutes = require('./modules/supplier/routes');
+const inventoryRoutes = require('./modules/inventory/routes');
+const warehouseRoutes = require('./modules/warehouse/routes');
 
 // Import middleware
 const { authenticate, requireOrgCode } = require('./middleware/auth');
@@ -35,6 +37,8 @@ app.use('/api/organization-settings', authenticate, requireOrgCode, organization
 app.use('/api/branches', authenticate, branchesRoutes);
 app.use('/api/products', authenticate, productsRoutes);
 app.use('/api/suppliers', authenticate, supplierRoutes);
+app.use('/api/inventory', authenticate, inventoryRoutes);
+app.use('/api/warehouses', authenticate, warehouseRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
