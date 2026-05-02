@@ -4,6 +4,7 @@ const inventoryController = require('./controller');
 const stockController = require('./stockController');
 const transactionController = require('./transactionController');
 const purchaseOrderController = require('./purchaseOrderController');
+const purchaseRequestController = require('./purchaseRequestController');
 const transferController = require('./transferController');
 const warehouseController = require('./warehouseController');
 const { authenticate, requirePermission } = require('../../middleware/auth');
@@ -20,6 +21,16 @@ router.post('/stock/:stockId/adjust', requirePermission('edit_inventory'), stock
 // ============ TRANSACTION ROUTES ============
 router.get('/transactions', requirePermission('view_inventory'), transactionController.getTransactions);
 router.post('/transactions', requirePermission('edit_inventory'), transactionController.recordTransaction);
+
+// ============ PURCHASE REQUEST ROUTES ============
+router.get('/purchase-requests', requirePermission('view_procurement'), purchaseRequestController.getPurchaseRequests);
+router.get('/purchase-requests/:prId', requirePermission('view_procurement'), purchaseRequestController.getPurchaseRequestById);
+router.post('/purchase-requests', requirePermission('create_purchase_plan'), purchaseRequestController.createPurchaseRequest);
+router.put('/purchase-requests/:prId/submit', requirePermission('create_purchase_plan'), purchaseRequestController.submitPurchaseRequest);
+router.post('/purchase-requests/:prId/approve', requirePermission('approve_purchase_plan'), purchaseRequestController.approvePurchaseRequest);
+router.post('/purchase-requests/:prId/reject', requirePermission('approve_purchase_plan'), purchaseRequestController.rejectPurchaseRequest);
+router.post('/purchase-requests/:prId/cancel', requirePermission('edit_inventory'), purchaseRequestController.cancelPurchaseRequest);
+router.post('/purchase-requests/:prId/convert', requirePermission('create_purchase_order'), purchaseRequestController.convertToPurchaseOrder);
 
 // ============ PURCHASE ORDER ROUTES ============
 router.get('/purchase-orders', requirePermission('view_procurement'), purchaseOrderController.getPurchaseOrders);
