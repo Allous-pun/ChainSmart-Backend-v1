@@ -33,6 +33,7 @@ ExchangeRateSchema.index({ baseCurrency: 1, targetCurrency: 1, effectiveFrom: -1
 -------------------------- */
 const SupplierLocationSchema = new mongoose.Schema({
   orgCode: { type: String, required: true, index: true },
+  supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', required: true },
   name: { type: String, required: true },
   type: {
     type: String,
@@ -59,6 +60,7 @@ const SupplierLocationSchema = new mongoose.Schema({
 
 SupplierLocationSchema.index({ location: '2dsphere' });
 SupplierLocationSchema.index({ orgCode: 1, country: 1 });
+SupplierLocationSchema.index({ supplierId: 1 });
 
 /* -------------------------
    STANDALONE VARIANT MODEL (Fixed referencing)

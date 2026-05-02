@@ -164,7 +164,10 @@ const getSupplierLocations = async (orgCode, supplierId = null) => {
   const query = { orgCode, isActive: true };
   if (supplierId) query.supplierId = supplierId;
   
-  return await SupplierLocation.find(query);
+  // Populate supplierId with supplier name and code
+  const locations = await SupplierLocation.find(query).populate('supplierId', 'name supplierCode email phone');
+  
+  return locations;
 };
 
 // ============ SUPPLY OFFERS ============
