@@ -94,7 +94,7 @@ const updateSupplier = async (supplierId, orgCode, updateData, updatedBy) => {
   const supplier = await Supplier.findOneAndUpdate(
     { _id: supplierId, orgCode },
     { ...updateData, updatedBy, updatedAt: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!supplier) {
     throw new Error('Supplier not found');
@@ -106,7 +106,7 @@ const deleteSupplier = async (supplierId, orgCode) => {
   const supplier = await Supplier.findOneAndUpdate(
     { _id: supplierId, orgCode },
     { status: 'inactive', updatedAt: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!supplier) {
     throw new Error('Supplier not found');
@@ -202,7 +202,7 @@ const updateSupplyOffer = async (offerId, orgCode, updateData, updatedBy) => {
   const offer = await SupplyOffer.findOneAndUpdate(
     { _id: offerId, orgCode },
     { ...updateData, updatedBy, updatedAt: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!offer) {
     throw new Error('Supply offer not found');
@@ -270,7 +270,7 @@ const updatePerformanceMetrics = async (data) => {
   const record = await ProductPerformanceMetrics.findOneAndUpdate(
     { orgCode, supplierId, productId, period, periodDate },
     { ...metrics, updatedAt: new Date() },
-    { new: true, upsert: true }
+    { returnDocument: 'after', upsert: true }
   );
   
   // Update supplier performance summary

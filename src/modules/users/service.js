@@ -85,7 +85,7 @@ const updateUser = async (userId, orgCode, updateData) => {
   const user = await User.findOneAndUpdate(
     { _id: userId, orgCode },
     { ...updateData, updatedAt: new Date() },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!user) {
     throw new Error('User not found');
@@ -97,7 +97,7 @@ const deactivateUser = async (userId, orgCode) => {
   const user = await User.findOneAndUpdate(
     { _id: userId, orgCode },
     { isActive: false },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!user) {
     throw new Error('User not found');
@@ -109,7 +109,7 @@ const updateBranchForUser = async (userId, orgCode, branchId) => {
   const user = await User.findOneAndUpdate(
     { _id: userId, orgCode },
     { branchId },
-    { new: true }
+    { returnDocument: 'after' }
   );
   return user;
 };
