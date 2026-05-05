@@ -55,6 +55,8 @@ const SupplierLocationSchema = new mongoose.Schema({
   contactEmail: { type: String },
   contactPhone: { type: String },
   
+  branchId: { type: String, index: true, sparse: true },
+  
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 
@@ -63,7 +65,7 @@ SupplierLocationSchema.index({ orgCode: 1, country: 1 });
 SupplierLocationSchema.index({ supplierId: 1 });
 
 /* -------------------------
-   STANDALONE VARIANT MODEL (Fixed referencing)
+   STANDALONE VARIANT MODEL
 -------------------------- */
 const VariantSchema = new mongoose.Schema({
   orgCode: { type: String, required: true, index: true },
@@ -81,7 +83,7 @@ VariantSchema.index({ orgCode: 1, sku: 1 });
 VariantSchema.index({ productId: 1, isActive: 1 });
 
 /* -------------------------
-   PRODUCT-SPECIFIC PERFORMANCE METRICS (Time-series, per product)
+   PRODUCT-SPECIFIC PERFORMANCE METRICS
 -------------------------- */
 const ProductPerformanceMetricsSchema = new mongoose.Schema({
   orgCode: { type: String, required: true, index: true },
@@ -110,12 +112,12 @@ ProductPerformanceMetricsSchema.index({ supplierId: 1, productId: 1, periodDate:
 ProductPerformanceMetricsSchema.index({ orgCode: 1, productId: 1 });
 
 /* -------------------------
-   ENHANCED COMPARISON CONTEXT (Enforced everywhere)
+   ENHANCED COMPARISON CONTEXT
 -------------------------- */
 const ComparisonContextSchema = new mongoose.Schema({
   asOfDate: { type: Date, required: true, default: Date.now },
   currency: { type: String, required: true, default: 'USD' },
-  destinationLocationId: { type: mongoose.Schema.Types.ObjectId, ref: 'SupplierLocation', required: true },
+  destinationLocationId: { type: mongoose.Schema.Types.Mixed, required: true },
   quantity: { type: Number, required: true, min: 1 },
   urgency: { type: String, enum: ['routine', 'expedited', 'emergency'], default: 'routine' },
   maxLeadTimeDays: { type: Number },
@@ -156,27 +158,22 @@ const SupplyOfferSchema = new mongoose.Schema({
   
   variantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Variant' },
   
-  // ===== PRICING (Quantity-aware) =====
   basePrice: { type: Number, required: true },
   currency: { type: String, default: 'USD' },
   priceBreaks: [PriceBreakSchema],
   
-  // ===== LEAD TIME =====
   minLeadTimeDays: { type: Number, required: true },
   maxLeadTimeDays: { type: Number, required: true },
   avgLeadTimeDays: { type: Number, required: true },
   leadTimeVariability: { type: Number, default: 0 },
   
-  // ===== UNIFIED TRANSPORT (One system, not competing) =====
   transportOptions: [TransportOptionSchema],
   
-  // ===== ORDER CONSTRAINTS =====
   moq: { type: Number, default: 1 },
   orderMultiple: { type: Number, default: 1 },
   maxOrderQuantity: { type: Number },
   maxMonthlyCapacity: { type: Number },
   
-  // ===== OTHER COSTS =====
   handlingCostPerUnit: { type: Number, default: 0 },
   dutyTaxRate: { type: Number, default: 0 },
   incoterm: { 
@@ -185,7 +182,6 @@ const SupplyOfferSchema = new mongoose.Schema({
     default: 'EXW'
   },
   
-  // ===== STRATEGIC FLAGS =====
   sourcingStrategy: {
     type: String,
     enum: ['primary', 'secondary', 'backup', 'exclusive', 'contract_only'],
@@ -196,17 +192,14 @@ const SupplyOfferSchema = new mongoose.Schema({
   contractReference: { type: String },
   contractValidUntil: { type: Date },
   
-  // ===== RISK MODELING =====
   riskScore: { type: Number, default: 0, min: 0, max: 100 },
   geopoliticalRisk: { type: Number, default: 0, min: 0, max: 100 },
   supplyDisruptionProbability: { type: Number, default: 0, min: 0, max: 1 },
   isSingleSource: { type: Boolean, default: false },
   
-  // ===== VALIDITY =====
   validFrom: { type: Date, default: Date.now },
   validUntil: { type: Date },
   
-  // ===== COMPUTED SCORES =====
   reliabilityScore: { type: Number, default: 100 },
   costScore: { type: Number, default: 100 },
   leadTimeScore: { type: Number, default: 100 },
@@ -217,7 +210,6 @@ const SupplyOfferSchema = new mongoose.Schema({
   updatedBy: { type: String }
 }, { timestamps: true });
 
-// Critical indexes
 SupplyOfferSchema.index({ orgCode: 1, supplierId: 1, productId: 1 });
 SupplyOfferSchema.index({ orgCode: 1, productId: 1, isActive: 1 });
 SupplyOfferSchema.index({ productId: 1, isActive: 1, validFrom: -1 });
@@ -226,11 +218,7 @@ SupplyOfferSchema.index({ productId: 1, avgLeadTimeDays: 1 });
 SupplyOfferSchema.index({ sourcingStrategy: 1 });
 SupplyOfferSchema.index({ isPreferred: 1 });
 
-/* -------------------------
-   FIXED #1: Unified cost calculation (single source of truth)
--------------------------- */
 SupplyOfferSchema.methods.calculateFullCost = async function(quantity, context, exchangeRateService, destinationLocation, productWeight, routeInfo = null) {
-  // 1. Unit price with quantity breaks
   let unitPrice = this.basePrice;
   if (this.priceBreaks && this.priceBreaks.length > 0) {
     const sortedBreaks = [...this.priceBreaks].sort((a, b) => a.minQuantity - b.minQuantity);
@@ -244,7 +232,6 @@ SupplyOfferSchema.methods.calculateFullCost = async function(quantity, context, 
     }
   }
   
-  // 2. Supplier cost with currency conversion
   let supplierCost = unitPrice * quantity;
   if (context.currency !== this.currency && exchangeRateService) {
     const rate = await exchangeRateService.getRate(this.currency, context.currency);
@@ -252,12 +239,10 @@ SupplyOfferSchema.methods.calculateFullCost = async function(quantity, context, 
     supplierCost = supplierCost * rate * (1 + volatilityBuffer);
   }
   
-  // 3. Add handling and duty
   const handlingCost = (this.handlingCostPerUnit || 0) * quantity;
   const dutyCost = this.dutyTaxRate ? (unitPrice * quantity) * (this.dutyTaxRate / 100) : 0;
   supplierCost += handlingCost + dutyCost;
   
-  // 4. Transport cost
   let transportCost = 0;
   let effectiveLeadTime = this.avgLeadTimeDays;
   let transportReliability = 0.95;
@@ -293,7 +278,6 @@ SupplyOfferSchema.methods.calculateFullCost = async function(quantity, context, 
     }
   }
   
-  // 5. Unified risk calculation
   const effectiveRisk = Math.min(100, 
     (this.riskScore * 0.5) +
     (this.geopoliticalRisk * 0.3) +
@@ -316,9 +300,6 @@ SupplyOfferSchema.methods.calculateFullCost = async function(quantity, context, 
   };
 };
 
-/* -------------------------
-   FIXED #2: Correct $or query with proper null handling
--------------------------- */
 SupplyOfferSchema.statics.findValidOffers = async function(productId, context) {
   const asOfDate = context.asOfDate || new Date();
   
@@ -342,44 +323,31 @@ SupplyOfferSchema.statics.findValidOffers = async function(productId, context) {
     ]
   };
   
-  // Only apply MOQ if quantity is provided
   if (context.quantity) {
     baseQuery.moq = { $lte: context.quantity };
   }
   
-  // Only apply lead time filter if provided
   if (context.maxLeadTimeDays) {
     baseQuery.avgLeadTimeDays = { $lte: context.maxLeadTimeDays };
   }
   
-  // Only apply risk filter if riskTolerance specified
   if (context.riskTolerance === 'low') {
     baseQuery.riskScore = { $lte: 20 };
   } else if (context.riskTolerance === 'medium') {
     baseQuery.riskScore = { $lte: 50 };
   }
   
-  // FIXED: Don't filter maxMonthlyCapacity in MongoDB query
-  // Instead, fetch all and filter in memory (treat null as unlimited)
   const offers = await this.find(baseQuery);
   
-  // Post-filter for capacity (null = unlimited capacity)
   return offers.filter(offer => {
-    // If quantity is not specified, include all
     if (!context.quantity) return true;
-    
-    // If maxMonthlyCapacity is null/undefined, treat as unlimited
-    if (offer.maxMonthlyCapacity === null || offer.maxMonthlyCapacity === undefined) {
-      return true;
-    }
-    
-    // Otherwise check capacity
+    if (offer.maxMonthlyCapacity === null || offer.maxMonthlyCapacity === undefined) return true;
     return offer.maxMonthlyCapacity >= context.quantity;
   });
 };
 
 /* -------------------------
-   SIMPLIFIED: Ranked offers using unified calculation
+   FIXED: Ranked offers - ONLY lookup, NEVER create
 -------------------------- */
 SupplyOfferSchema.statics.getRankedOffers = async function(productId, context, weights = null, exchangeRateService = null) {
   const offers = await this.findValidOffers(productId, context);
@@ -396,9 +364,27 @@ SupplyOfferSchema.statics.getRankedOffers = async function(productId, context, w
     }
   }
   
-  const destinationLocation = await mongoose.model('SupplierLocation').findById(context.destinationLocationId);
+  // LOOKUP ONLY - NEVER CREATE
+  let destinationLocation = null;
+  const destinationId = context.destinationLocationId;
+  
+  if (!destinationId) {
+    throw new Error('destinationLocationId is required');
+  }
+  
+  // Try to find by _id (if it's a valid ObjectId)
+  if (mongoose.Types.ObjectId.isValid(destinationId)) {
+    destinationLocation = await mongoose.model('SupplierLocation').findById(destinationId);
+  }
+  
+  // If not found, try by branchId
   if (!destinationLocation) {
-    throw new Error('Destination location not found');
+    destinationLocation = await mongoose.model('SupplierLocation').findOne({ branchId: destinationId });
+  }
+  
+  // If still not found, throw clear error
+  if (!destinationLocation) {
+    throw new Error(`Destination location not found for ID: ${destinationId}. Please ensure a SupplierLocation exists with this _id or branchId.`);
   }
   
   const routesCache = new Map();
@@ -493,7 +479,7 @@ SupplyOfferSchema.statics.getRankedOffers = async function(productId, context, w
 };
 
 /* -------------------------
-   EXECUTABLE SOURCING RULES
+   SOURCING RULES
 -------------------------- */
 const SourcingRuleSchema = new mongoose.Schema({
   orgCode: { type: String, required: true, index: true },

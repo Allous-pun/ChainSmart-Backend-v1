@@ -16,6 +16,7 @@ const supplierRoutes = require('./modules/supplier/routes');
 const inventoryRoutes = require('./modules/inventory/routes');
 const warehouseRoutes = require('./modules/warehouse/routes');
 const logisticsRoutes = require('./modules/logistics/routes');
+const costSimulationRoutes = require('./modules/costSimulation/routes');
 
 // Import middleware
 const { authenticate, requireOrgCode } = require('./middleware/auth');
@@ -41,6 +42,7 @@ app.use('/api/suppliers', authenticate, supplierRoutes);
 app.use('/api/inventory', authenticate, inventoryRoutes);
 app.use('/api/warehouses', authenticate, warehouseRoutes);
 app.use('/api/logistics', authenticate, logisticsRoutes);
+app.use('/api/cost-simulation', authenticate, costSimulationRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
