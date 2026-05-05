@@ -571,74 +571,80 @@ class InventoryHealthModel {
     this.recommendedQuantity = data.recommendedQuantity;
   }
   
-  static fromStockAndForecast(stock, forecast, orgSettings = null) {
-    const defaultLeadTimeDays = orgSettings?.procurement?.defaultLeadTimeDays || 5;
-    const defaultSafetyStockDays = orgSettings?.inventory?.defaultSafetyStockDays || 7;
-    
-    const dailyAvgDemand = Math.max(0.001, forecast.dailyAvgDemand);
-    const daysOfCover = stock.availableStock / dailyAvgDemand;
-    const excessStock = Math.max(0, stock.physicalStock - (stock.maxStockLevel || Infinity));
-    
+static fromStockAndForecast(stock, forecast, orgSettings = null) {
+  const defaultLeadTimeDays = orgSettings?.procurement?.defaultLeadTimeDays || 5;
+  const defaultSafetyStockDays = orgSettings?.inventory?.defaultSafetyStockDays || 7;
+  
+  const dailyAvgDemand = Math.max(0.001, forecast.dailyAvgDemand);
+  const daysOfCover = stock.availableStock / dailyAvgDemand;
+  const excessStock = Math.max(0, stock.physicalStock - (stock.maxStockLevel || Infinity));
+  
+  // Use stock's configured reorderPoint if set (has priority), otherwise calculate from settings
+  let reorderPoint;
+  if (stock.reorderPoint && stock.reorderPoint > 0) {
+    reorderPoint = stock.reorderPoint;
+  } else {
     const safetyStock = dailyAvgDemand * defaultSafetyStockDays;
-    const reorderPoint = (dailyAvgDemand * defaultLeadTimeDays) + safetyStock;
-    const shortageQuantity = Math.max(0, roundQty(reorderPoint - stock.availableStock));
-    
-    let riskLevel = 'low';
-    let baseHealthScore = 100;
-    
-    if (daysOfCover < 1) {
-      riskLevel = 'critical';
-      baseHealthScore = 10;
-    } else if (daysOfCover < 3) {
-      riskLevel = 'high';
-      baseHealthScore = 30;
-    } else if (daysOfCover < 7) {
-      riskLevel = 'medium';
-      baseHealthScore = 60;
-    }
-    
-    let healthScore = clamp(baseHealthScore, 0, 100);
-    
-    if (excessStock > 0) {
-      const excessPenalty = Math.min(30, (excessStock / Math.max(1, stock.physicalStock)) * 50);
-      healthScore = clamp(healthScore - excessPenalty, 0, 100);
-    }
-    
-    let recommendedAction = 'do_nothing';
-    let recommendedQuantity = 0;
-    let priority = 0;
-    
-    if (shortageQuantity > 0) {
-      const daysUntilStockout = stock.availableStock / dailyAvgDemand;
-      if (daysUntilStockout < 1) priority = 10;
-      else if (daysUntilStockout < 3) priority = 8;
-      else if (daysUntilStockout < 5) priority = 6;
-      else if (daysUntilStockout < 7) priority = 4;
-      else priority = 2;
-      
-      recommendedAction = 'reorder';
-      recommendedQuantity = roundQty(shortageQuantity + (dailyAvgDemand * defaultLeadTimeDays));
-    } else if (excessStock > 0) {
-      recommendedAction = 'transfer_out';
-      recommendedQuantity = roundQty(excessStock);
-      priority = Math.min(5, Math.floor(excessStock / Math.max(1, dailyAvgDemand)));
-    }
-    
-    return new InventoryHealthModel({
-      orgCode: stock.orgCode,
-      productId: stock.productId,
-      variantId: stock.variantId,
-      locationId: stock.locationId,
-      daysOfCover: roundQty(daysOfCover),
-      excessStock: roundQty(excessStock),
-      shortageQuantity: roundQty(shortageQuantity),
-      healthScore: clamp(healthScore, 0, 100),
-      riskLevel,
-      priority: clamp(priority, 0, 10),
-      recommendedAction,
-      recommendedQuantity
-    });
+    reorderPoint = (dailyAvgDemand * defaultLeadTimeDays) + safetyStock;
   }
+  const shortageQuantity = Math.max(0, roundQty(reorderPoint - stock.availableStock));
+  
+  let riskLevel = 'low';
+  let baseHealthScore = 100;
+  
+  if (daysOfCover < 1) {
+    riskLevel = 'critical';
+    baseHealthScore = 10;
+  } else if (daysOfCover < 3) {
+    riskLevel = 'high';
+    baseHealthScore = 30;
+  } else if (daysOfCover < 7) {
+    riskLevel = 'medium';
+    baseHealthScore = 60;
+  }
+  
+  let healthScore = clamp(baseHealthScore, 0, 100);
+  
+  if (excessStock > 0) {
+    const excessPenalty = Math.min(30, (excessStock / Math.max(1, stock.physicalStock)) * 50);
+    healthScore = clamp(healthScore - excessPenalty, 0, 100);
+  }
+  
+  let recommendedAction = 'do_nothing';
+  let recommendedQuantity = 0;
+  let priority = 0;
+  
+  if (shortageQuantity > 0) {
+    const daysUntilStockout = stock.availableStock / dailyAvgDemand;
+    if (daysUntilStockout < 1) priority = 10;
+    else if (daysUntilStockout < 3) priority = 8;
+    else if (daysUntilStockout < 5) priority = 6;
+    else if (daysUntilStockout < 7) priority = 4;
+    else priority = 2;
+    
+    recommendedAction = 'reorder';
+    recommendedQuantity = roundQty(shortageQuantity + (dailyAvgDemand * defaultLeadTimeDays));
+  } else if (excessStock > 0) {
+    recommendedAction = 'transfer_out';
+    recommendedQuantity = roundQty(excessStock);
+    priority = Math.min(5, Math.floor(excessStock / Math.max(1, dailyAvgDemand)));
+  }
+  
+  return new InventoryHealthModel({
+    orgCode: stock.orgCode,
+    productId: stock.productId,
+    variantId: stock.variantId,
+    locationId: stock.locationId,
+    daysOfCover: roundQty(daysOfCover),
+    excessStock: roundQty(excessStock),
+    shortageQuantity: roundQty(shortageQuantity),
+    healthScore: clamp(healthScore, 0, 100),
+    riskLevel,
+    priority: clamp(priority, 0, 10),
+    recommendedAction,
+    recommendedQuantity
+  });
+}
   
   toDocument(version = 1, basedOnForecastVersion = 1) {
     return {
