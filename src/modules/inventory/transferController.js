@@ -3,6 +3,7 @@ const StockState = require('./stockModel');
 const InventoryTransaction = require('./transactionModel');
 const Settings = require('../settings/model');
 const OrganizationSettings = require('../organizationSettings/model');
+const emissionsService = require('../emissions/service');
 
 const getTransfers = async (req, res) => {
   try {
@@ -82,6 +83,22 @@ const getTransferById = async (req, res) => {
     const totalQuantity = transfer.items.reduce((sum, item) => sum + item.quantity, 0);
     const totalValue = transfer.items.reduce((sum, item) => sum + (item.quantity * (item.unitCost || 0)), 0);
     
+    // Get emissions data if available
+    let emissionsData = null;
+    try {
+      const emissions = await emissionsService.getEmissionByReference(transfer._id.toString(), 'transfer', orgCode);
+      if (emissions) {
+        emissionsData = {
+          co2Emitted: emissions.co2Emitted,
+          co2PerKm: emissions.co2PerKm,
+          distanceKm: emissions.distanceKm,
+          transportMode: emissions.transportMode
+        };
+      }
+    } catch (emissionsErr) {
+      console.error(`[Emissions] Failed to fetch for transfer ${transfer.transferNumber}:`, emissionsErr.message);
+    }
+    
     res.json({ 
       success: true, 
       data: {
@@ -92,7 +109,8 @@ const getTransferById = async (req, res) => {
           estimatedTransportCost: estimatedCost,
           currency: defaultCurrency,
           costPerUnit: totalQuantity > 0 ? (estimatedCost / totalQuantity) : null
-        }
+        },
+        emissions: emissionsData
       },
       context: {
         fuelCostPerKm,
@@ -372,6 +390,66 @@ const updateTransferStatus = async (req, res) => {
         transfer.actualTransportCost = actualTransportCost;
         transfer.totalCost = actualTransportCost;
         transfer.holdingCostSavings = holdingCostSavings;
+      }
+      
+      // ========== EMISSIONS CALCULATION AND RECORDING ==========
+      // Calculate and record emissions for this transfer
+      try {
+        // Fetch product details for weight calculation if needed
+        const itemsWithDetails = [];
+        for (const item of transfer.items) {
+          let weight = item.weight || 1; // Default weight if not provided
+          
+          // Try to fetch product weight if available
+          if (item.productId) {
+            const product = await require('../../products/model').findById(item.productId);
+            if (product && product.weight) {
+              weight = product.weight;
+            }
+          }
+          
+          itemsWithDetails.push({
+            productId: item.productId,
+            quantity: item.quantity,
+            weight: weight
+          });
+        }
+        
+        const emissionsResult = await emissionsService.calculateTransferEmissions({
+          ...transfer.toObject(),
+          items: itemsWithDetails
+        }, orgCode);
+        
+        if (emissionsResult && emissionsResult.co2Emitted > 0) {
+          await emissionsService.saveEmissionRecord({
+            referenceId: transfer._id.toString(),
+            referenceType: 'transfer',
+            transferNumber: transfer.transferNumber,
+            productId: transfer.items[0]?.productId,
+            quantity: transfer.items.reduce((s, i) => s + i.quantity, 0),
+            weightKg: transfer.items.reduce((s, i) => s + ((i.weight || 1) * i.quantity), 0),
+            fromLocationId: transfer.fromWarehouseId,
+            toLocationId: transfer.toWarehouseId,
+            distanceKm: emissionsResult.distanceKm,
+            transportMode: 'road',
+            co2Emitted: emissionsResult.co2Emitted,
+            co2PerKm: emissionsResult.co2PerKm,
+            calculationMethod: emissionsResult.calculationMethod,
+            vehicleType: emissionsResult.vehicleType,
+            fuelType: emissionsResult.fuelType
+          }, orgCode, 'system');
+          
+          await emissionsService.updateMonthlySummary(orgCode, new Date().getFullYear(), new Date().getMonth() + 1, {
+            co2Emitted: emissionsResult.co2Emitted,
+            referenceType: 'transfer',
+            transportMode: 'road',
+            distanceKm: emissionsResult.distanceKm
+          });
+          
+          console.log(`[Emissions] Recorded ${emissionsResult.co2Emitted.toFixed(2)} kg CO2 for transfer ${transfer.transferNumber}`);
+        }
+      } catch (emissionsErr) {
+        console.error(`[Emissions] Failed to calculate for transfer ${transfer.transferNumber}:`, emissionsErr.message);
       }
     }
     

@@ -1,6 +1,7 @@
 const PurchaseOrder = require('./purchaseOrderModel');
 const Settings = require('../settings/model');
 const OrganizationSettings = require('../organizationSettings/model');
+const emissionsService = require('../emissions/service');
 
 const getPurchaseOrders = async (req, res) => {
   try {
@@ -39,7 +40,30 @@ const getPurchaseOrderById = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Purchase order not found' });
     }
     
-    res.json({ success: true, data: po });
+    // Get emissions data if available
+    let emissionsData = null;
+    try {
+      const emissions = await emissionsService.getEmissionByReference(po._id.toString(), 'purchase_order', orgCode);
+      if (emissions) {
+        emissionsData = {
+          co2Emitted: emissions.co2Emitted,
+          co2PerKm: emissions.co2PerKm,
+          distanceKm: emissions.distanceKm,
+          transportMode: emissions.transportMode,
+          calculationMethod: emissions.calculationMethod
+        };
+      }
+    } catch (emissionsErr) {
+      console.error(`[Emissions] Failed to fetch for PO ${po.poNumber}:`, emissionsErr.message);
+    }
+    
+    res.json({ 
+      success: true, 
+      data: {
+        ...po.toObject(),
+        emissions: emissionsData
+      }
+    });
   } catch (error) {
     console.error('Get purchase order error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -122,7 +146,7 @@ const updatePurchaseOrderStatus = async (req, res) => {
     const pillarSettings = await Settings.findOne({ orgCode });
     const autoApprovalThreshold = pillarSettings?.procurement?.autoApprovalThreshold || 10000;
     
-    const po = await PurchaseOrder.findOne({ _id: poId, orgCode });
+    const po = await PurchaseOrder.findOne({ _id: poId, orgCode }).populate('supplierId', 'name supplierCode');
     
     if (!po) {
       return res.status(404).json({ success: false, error: 'Purchase order not found' });
@@ -150,6 +174,101 @@ const updatePurchaseOrderStatus = async (req, res) => {
     // Auto-approve check if moving to approved
     if (status === 'approved' && po.totalAmount <= autoApprovalThreshold) {
       // Already meets criteria, proceed
+    }
+    
+    // If receiving, calculate and record emissions
+    if (status === 'received') {
+      // Calculate and record emissions for this purchase order
+      try {
+        // Calculate total weight from items
+        let totalWeight = 0;
+        let totalQuantity = 0;
+        
+        for (const item of po.items) {
+          totalQuantity += item.quantity;
+          // Estimate weight: if product has weight, use it, otherwise default to 1kg per unit
+          let weightPerUnit = 1;
+          if (item.productId && typeof item.productId !== 'string') {
+            // If product is populated, try to get weight
+            if (item.productId.weight) weightPerUnit = item.productId.weight;
+          }
+          totalWeight += weightPerUnit * item.quantity;
+        }
+        
+        // Get supplier location to calculate distance
+        let estimatedDistance = 100; // Default km
+        let supplierLocation = null;
+        
+        // Try to get supplier location
+        if (po.supplierId && typeof po.supplierId !== 'string') {
+          const Supplier = require('../supplier/model');
+          const supplier = await Supplier.findById(po.supplierId._id).populate('locations');
+          if (supplier && supplier.locations && supplier.locations.length > 0) {
+            // Use first location as origin
+            supplierLocation = supplier.locations[0];
+          }
+        }
+        
+        // Get warehouse location for destination
+        let warehouseLocation = null;
+        const Warehouse = require('./warehouseModel');
+        const warehouse = await Warehouse.findOne({ locationId: po.destinationWarehouseId });
+        if (warehouse && warehouse.location) {
+          warehouseLocation = warehouse.location.coordinates;
+        }
+        
+        // Calculate actual distance if both locations have coordinates
+        if (supplierLocation && supplierLocation.coordinates && warehouseLocation) {
+          const { calculateDrivingDistance } = require('../../utils/geocoding');
+          const distanceResult = await calculateDrivingDistance(
+            supplierLocation.coordinates[1], supplierLocation.coordinates[0],
+            warehouseLocation[1], warehouseLocation[0]
+          );
+          estimatedDistance = distanceResult.distanceKm;
+        }
+        
+        // Get emissions factors from settings
+        const emissionsSettings = await Settings.findOne({ orgCode });
+        const co2FactorPerKmPerTon = emissionsSettings?.emissions?.co2FactorPerKm || 0.12;
+        
+        // Calculate CO2 emissions
+        const weightInTons = totalWeight / 1000;
+        const co2Emitted = estimatedDistance * co2FactorPerKmPerTon * weightInTons;
+        const co2PerKm = co2FactorPerKmPerTon * weightInTons;
+        const co2PerUnit = totalQuantity > 0 ? co2Emitted / totalQuantity : 0;
+        
+        if (co2Emitted > 0) {
+          await emissionsService.saveEmissionRecord({
+            referenceId: po._id.toString(),
+            referenceType: 'purchase_order',
+            poNumber: po.poNumber,
+            productId: po.items[0]?.productId,
+            productName: po.items[0]?.productId?.name,
+            quantity: totalQuantity,
+            weightKg: totalWeight,
+            fromLocationId: po.supplierId?._id?.toString(),
+            toLocationId: po.destinationWarehouseId,
+            distanceKm: estimatedDistance,
+            transportMode: 'road',
+            vehicleType: 'truck',
+            co2Emitted: co2Emitted,
+            co2PerKm: co2PerKm,
+            co2PerUnit: co2PerUnit,
+            calculationMethod: supplierLocation && warehouseLocation ? 'geocoded' : 'estimated'
+          }, orgCode, 'system');
+          
+          await emissionsService.updateMonthlySummary(orgCode, new Date().getFullYear(), new Date().getMonth() + 1, {
+            co2Emitted: co2Emitted,
+            referenceType: 'purchase_order',
+            transportMode: 'road',
+            distanceKm: estimatedDistance
+          });
+          
+          console.log(`[Emissions] Recorded ${co2Emitted.toFixed(2)} kg CO2 for purchase order ${po.poNumber} (${estimatedDistance.toFixed(2)} km, ${totalWeight} kg)`);
+        }
+      } catch (emissionsErr) {
+        console.error(`[Emissions] Failed to calculate for PO ${po.poNumber}:`, emissionsErr.message);
+      }
     }
     
     const updatedPo = await PurchaseOrder.findOneAndUpdate(

@@ -11,6 +11,7 @@ const {
 const Settings = require('../settings/model');
 const OrganizationSettings = require('../organizationSettings/model');
 const Warehouse = require('../inventory/warehouseModel');
+const emissionsService = require('../emissions/service');
 
 // Helper to get logistics service with proper ports
 const getLogisticsService = async (orgCode) => {
@@ -170,7 +171,32 @@ const getShipment = async (req, res) => {
 
     const stops = await ShipmentStop.find({ shipmentId: shipment._id }).sort({ stopNumber: 1 });
 
-    res.json({ success: true, data: { ...shipment.toObject(), stops } });
+    // Get emissions data if available
+    let emissionsData = null;
+    try {
+      const emissions = await emissionsService.getEmissionByReference(shipment.shipmentId, 'shipment', orgCode);
+      if (emissions) {
+        emissionsData = {
+          co2Emitted: emissions.co2Emitted,
+          co2PerKm: emissions.co2PerKm,
+          co2PerUnit: emissions.co2PerUnit,
+          distanceKm: emissions.distanceKm,
+          transportMode: emissions.transportMode,
+          calculationMethod: emissions.calculationMethod
+        };
+      }
+    } catch (emissionsErr) {
+      console.error(`[Emissions] Failed to fetch for shipment ${shipment.shipmentId}:`, emissionsErr.message);
+    }
+
+    res.json({ 
+      success: true, 
+      data: { 
+        ...shipment.toObject(), 
+        stops,
+        emissions: emissionsData
+      } 
+    });
   } catch (error) {
     console.error('Get shipment error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -256,6 +282,51 @@ const completeDelivery = async (req, res) => {
 
     const logistics = await getLogisticsService(orgCode);
     const shipment = await logistics.completeDelivery(shipmentId, orgCode);
+
+    // ========== EMISSIONS CALCULATION AND RECORDING ==========
+    // Calculate and record emissions for this shipment
+    try {
+      // Get the route to get distance
+      const route = shipment.routeId ? await Route.findById(shipment.routeId) : null;
+      const distanceKm = route?.totalDistanceKm || shipment.costSnapshot?.totalDistanceKm || 0;
+      
+      const emissionsResult = await emissionsService.calculateShipmentEmissions({
+        ...shipment.toObject(),
+        distanceKm
+      }, orgCode);
+      
+      if (emissionsResult && emissionsResult.co2Emitted > 0) {
+        await emissionsService.saveEmissionRecord({
+          referenceId: shipment.shipmentId,
+          referenceType: 'shipment',
+          shipmentId: shipment.shipmentId,
+          productId: shipment.items[0]?.productId,
+          productName: shipment.items[0]?.productId?.name,
+          quantity: shipment.items?.reduce((s, i) => s + i.quantity, 0) || 0,
+          weightKg: shipment.totalWeight || 1000,
+          fromLocationId: shipment.originLocationId,
+          toLocationId: shipment.destinationLocationId,
+          distanceKm: emissionsResult.distanceKm || distanceKm,
+          transportMode: 'road',
+          vehicleType: shipment.vehicleId?.type || 'truck',
+          co2Emitted: emissionsResult.co2Emitted,
+          co2PerKm: emissionsResult.co2PerKm,
+          co2PerUnit: emissionsResult.co2PerUnit,
+          calculationMethod: emissionsResult.calculationMethod
+        }, orgCode, 'system');
+        
+        await emissionsService.updateMonthlySummary(orgCode, new Date().getFullYear(), new Date().getMonth() + 1, {
+          co2Emitted: emissionsResult.co2Emitted,
+          referenceType: 'shipment',
+          transportMode: 'road',
+          distanceKm: emissionsResult.distanceKm || distanceKm
+        });
+        
+        console.log(`[Emissions] Recorded ${emissionsResult.co2Emitted.toFixed(2)} kg CO2 for shipment ${shipment.shipmentId}`);
+      }
+    } catch (emissionsErr) {
+      console.error(`[Emissions] Failed to calculate for shipment ${shipment.shipmentId}:`, emissionsErr.message);
+    }
 
     res.json({
       success: true,
